@@ -22,6 +22,7 @@ import Dashboard from "@/pages/dashboard";
 import Tasks from "@/pages/tasks";
 import Habits from "@/pages/habits";
 import Pomodoro from "@/pages/pomodoro";
+import Calendar from "@/pages/calendar";
 import Settings from "@/pages/settings";
 import Landing from "@/pages/landing";
 import NotFound from "@/pages/not-found";
@@ -80,6 +81,7 @@ function AuthenticatedRouter() {
       <Route path="/tasks" component={Tasks} />
       <Route path="/habits" component={Habits} />
       <Route path="/pomodoro" component={Pomodoro} />
+      <Route path="/calendar" component={Calendar} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>

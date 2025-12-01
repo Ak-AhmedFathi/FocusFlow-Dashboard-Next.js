@@ -6,6 +6,7 @@ import {
   Timer,
   Zap,
   Settings,
+  Calendar,
 } from "lucide-react";
 import {
   Sidebar,
@@ -40,6 +41,11 @@ const navigationItems = [
     title: "Pomodoro",
     url: "/pomodoro",
     icon: Timer,
+  },
+  {
+    title: "Calendar",
+    url: "/calendar",
+    icon: Calendar,
   },
   {
     title: "Settings",
