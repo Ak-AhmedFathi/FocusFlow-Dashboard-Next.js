@@ -1,54 +1,94 @@
-import { useState, useCallback, useEffect } from "react";
-import type { Task, InsertTask, TaskPriority } from "@shared/schema";
-import { storage } from "@/lib/storage";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { Task, TaskPriority } from "@shared/schema";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { isUnauthorizedError } from "@/lib/authUtils";
+import { useCallback } from "react";
+
+interface InsertTaskData {
+  title: string;
+  description?: string;
+  priority?: "high" | "medium" | "low";
+  dueDate?: string | null;
+}
 
 export function useTasks() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
-  useEffect(() => {
-    const loadedTasks = storage.getTasks();
-    setTasks(loadedTasks);
-    setIsLoading(false);
-  }, []);
+  const { data: tasks = [], isLoading } = useQuery<Task[]>({
+    queryKey: ["/api/tasks"],
+  });
 
-  const saveTasks = useCallback((newTasks: Task[]) => {
-    setTasks(newTasks);
-    storage.saveTasks(newTasks);
-  }, []);
+  const handleError = useCallback((error: Error, action: string) => {
+    if (isUnauthorizedError(error)) {
+      toast({
+        title: "Session Expired",
+        description: "Please sign in again",
+        variant: "destructive",
+      });
+      setTimeout(() => {
+        window.location.href = "/api/login";
+      }, 500);
+      return;
+    }
+    toast({
+      title: "Error",
+      description: `Failed to ${action}`,
+      variant: "destructive",
+    });
+  }, [toast]);
 
-  const addTask = useCallback((insertTask: InsertTask) => {
-    const newTask: Task = {
-      id: crypto.randomUUID(),
-      title: insertTask.title,
-      description: insertTask.description || "",
-      priority: insertTask.priority,
-      completed: false,
-      dueDate: insertTask.dueDate || null,
-      createdAt: new Date().toISOString(),
-    };
-    saveTasks([...tasks, newTask]);
-    return newTask;
-  }, [tasks, saveTasks]);
+  const addTaskMutation = useMutation({
+    mutationFn: async (taskData: InsertTaskData) => {
+      const res = await apiRequest("POST", "/api/tasks", taskData);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    },
+    onError: (error: Error) => handleError(error, "add task"),
+  });
+
+  const updateTaskMutation = useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: Partial<Task> }) => {
+      const res = await apiRequest("PATCH", `/api/tasks/${id}`, updates);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    },
+    onError: (error: Error) => handleError(error, "update task"),
+  });
+
+  const deleteTaskMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/tasks/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    },
+    onError: (error: Error) => handleError(error, "delete task"),
+  });
+
+  const addTask = useCallback((taskData: InsertTaskData) => {
+    addTaskMutation.mutate(taskData);
+  }, [addTaskMutation]);
 
   const updateTask = useCallback((id: string, updates: Partial<Task>) => {
-    const updatedTasks = tasks.map((task) =>
-      task.id === id ? { ...task, ...updates } : task
-    );
-    saveTasks(updatedTasks);
-  }, [tasks, saveTasks]);
+    updateTaskMutation.mutate({ id, updates });
+  }, [updateTaskMutation]);
 
   const deleteTask = useCallback((id: string) => {
-    const filteredTasks = tasks.filter((task) => task.id !== id);
-    saveTasks(filteredTasks);
-  }, [tasks, saveTasks]);
+    deleteTaskMutation.mutate(id);
+  }, [deleteTaskMutation]);
 
   const toggleComplete = useCallback((id: string) => {
-    const updatedTasks = tasks.map((task) =>
-      task.id === id ? { ...task, completed: !task.completed } : task
-    );
-    saveTasks(updatedTasks);
-  }, [tasks, saveTasks]);
+    const task = tasks.find((t) => t.id === id);
+    if (task) {
+      updateTaskMutation.mutate({ id, updates: { completed: !task.completed } });
+    }
+  }, [tasks, updateTaskMutation]);
 
   const getTasksByPriority = useCallback((priority: TaskPriority) => {
     return tasks.filter((task) => task.priority === priority);
@@ -78,5 +118,8 @@ export function useTasks() {
     getCompletedTasks,
     getPendingTasks,
     getTodayTasks,
+    isAdding: addTaskMutation.isPending,
+    isUpdating: updateTaskMutation.isPending,
+    isDeleting: deleteTaskMutation.isPending,
   };
 }

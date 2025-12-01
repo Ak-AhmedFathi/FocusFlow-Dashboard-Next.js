@@ -1,6 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import type { PomodoroState, PomodoroStatus } from "@shared/schema";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { PomodoroState, PomodoroSession } from "@shared/schema";
 import { storage } from "@/lib/storage";
+import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/useAuth";
 
 const WORK_DURATION = 25 * 60;
 const BREAK_DURATION = 5 * 60;
@@ -8,8 +11,25 @@ const LONG_BREAK_DURATION = 15 * 60;
 const SESSIONS_BEFORE_LONG_BREAK = 4;
 
 export function usePomodoro() {
+  const { isAuthenticated } = useAuth();
+  const queryClient = useQueryClient();
   const [state, setState] = useState<PomodoroState>(() => storage.getPomodoroState());
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const { data: sessions = [] } = useQuery<PomodoroSession[]>({
+    queryKey: ["/api/pomodoro/sessions"],
+    enabled: isAuthenticated,
+  });
+
+  const createSessionMutation = useMutation({
+    mutationFn: async (sessionData: { startedAt: string; completedAt: string; type: string; duration: number }) => {
+      const res = await apiRequest("POST", "/api/pomodoro/sessions", sessionData);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pomodoro/sessions"] });
+    },
+  });
 
   const saveState = useCallback((newState: PomodoroState) => {
     setState(newState);
@@ -79,12 +99,21 @@ export function usePomodoro() {
       const newSessionsCompleted = state.sessionsCompleted + 1;
       const isLongBreak = newSessionsCompleted % SESSIONS_BEFORE_LONG_BREAK === 0;
       
-      storage.addPomodoroSession({
-        startedAt: state.currentSessionStart || new Date().toISOString(),
-        completedAt: new Date().toISOString(),
-        type: "work",
-        duration: WORK_DURATION - state.timeRemaining,
-      });
+      if (isAuthenticated) {
+        createSessionMutation.mutate({
+          startedAt: state.currentSessionStart || new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+          type: "work",
+          duration: WORK_DURATION - state.timeRemaining,
+        });
+      } else {
+        storage.addPomodoroSession({
+          startedAt: state.currentSessionStart || new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+          type: "work",
+          duration: WORK_DURATION - state.timeRemaining,
+        });
+      }
 
       saveState({
         status: isLongBreak ? "longBreak" : "break",
@@ -100,7 +129,7 @@ export function usePomodoro() {
         currentSessionStart: null,
       });
     }
-  }, [state, saveState, clearTimer]);
+  }, [state, saveState, clearTimer, isAuthenticated, createSessionMutation]);
 
   useEffect(() => {
     if (state.currentSessionStart && state.timeRemaining > 0) {
@@ -115,12 +144,21 @@ export function usePomodoro() {
               const newSessionsCompleted = prev.sessionsCompleted + 1;
               const isLongBreak = newSessionsCompleted % SESSIONS_BEFORE_LONG_BREAK === 0;
               
-              storage.addPomodoroSession({
-                startedAt: prev.currentSessionStart || new Date().toISOString(),
-                completedAt: new Date().toISOString(),
-                type: "work",
-                duration: WORK_DURATION,
-              });
+              if (isAuthenticated) {
+                createSessionMutation.mutate({
+                  startedAt: prev.currentSessionStart || new Date().toISOString(),
+                  completedAt: new Date().toISOString(),
+                  type: "work",
+                  duration: WORK_DURATION,
+                });
+              } else {
+                storage.addPomodoroSession({
+                  startedAt: prev.currentSessionStart || new Date().toISOString(),
+                  completedAt: new Date().toISOString(),
+                  type: "work",
+                  duration: WORK_DURATION,
+                });
+              }
 
               showNotification(
                 "Work session complete!",
@@ -157,7 +195,7 @@ export function usePomodoro() {
     }
 
     return () => clearTimer();
-  }, [state.currentSessionStart, clearTimer, showNotification]);
+  }, [state.currentSessionStart, clearTimer, showNotification, isAuthenticated, createSessionMutation]);
 
   const formatTime = useCallback((seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -187,9 +225,15 @@ export function usePomodoro() {
 
   const getTodaySessions = useCallback(() => {
     const today = new Date().toISOString().split("T")[0];
-    const sessions = storage.getPomodoroSessions();
-    return sessions.filter((s) => s.startedAt.startsWith(today) && s.type === "work");
-  }, []);
+    if (isAuthenticated && sessions.length > 0) {
+      return sessions.filter((s) => {
+        const sessionDate = new Date(s.startedAt).toISOString().split("T")[0];
+        return sessionDate === today && s.type === "work";
+      });
+    }
+    const localSessions = storage.getPomodoroSessions();
+    return localSessions.filter((s) => s.startedAt.startsWith(today) && s.type === "work");
+  }, [isAuthenticated, sessions]);
 
   return {
     state,

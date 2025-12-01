@@ -1,211 +1,167 @@
-import { randomUUID } from "crypto";
-import type { Task, Habit, PomodoroSession, InsertTask, InsertHabit, TaskPriority } from "@shared/schema";
+import { eq, and } from "drizzle-orm";
+import { db } from "./db";
+import {
+  users,
+  tasks,
+  habits,
+  pomodoroSessions,
+  type User,
+  type UpsertUser,
+  type Task,
+  type InsertTask,
+  type Habit,
+  type InsertHabit,
+  type PomodoroSession,
+  type InsertPomodoroSession,
+} from "@shared/schema";
 
 export interface IStorage {
-  getTasks(): Promise<Task[]>;
-  getTask(id: string): Promise<Task | undefined>;
-  createTask(task: InsertTask): Promise<Task>;
-  updateTask(id: string, updates: Partial<Task>): Promise<Task | undefined>;
-  deleteTask(id: string): Promise<boolean>;
-  
-  getHabits(): Promise<Habit[]>;
-  getHabit(id: string): Promise<Habit | undefined>;
-  createHabit(habit: InsertHabit): Promise<Habit>;
-  updateHabit(id: string, updates: Partial<Habit>): Promise<Habit | undefined>;
-  deleteHabit(id: string): Promise<boolean>;
-  
-  getPomodoroSessions(): Promise<PomodoroSession[]>;
-  createPomodoroSession(session: Omit<PomodoroSession, "id">): Promise<PomodoroSession>;
+  // User operations (required for Replit Auth)
+  getUser(id: string): Promise<User | undefined>;
+  upsertUser(user: UpsertUser): Promise<User>;
+
+  // Task operations
+  getTasks(userId: string): Promise<Task[]>;
+  getTask(id: string, userId: string): Promise<Task | undefined>;
+  createTask(userId: string, task: Omit<InsertTask, "userId">): Promise<Task>;
+  updateTask(id: string, userId: string, updates: Partial<Task>): Promise<Task | undefined>;
+  deleteTask(id: string, userId: string): Promise<boolean>;
+
+  // Habit operations
+  getHabits(userId: string): Promise<Habit[]>;
+  getHabit(id: string, userId: string): Promise<Habit | undefined>;
+  createHabit(userId: string, habit: Omit<InsertHabit, "userId">): Promise<Habit>;
+  updateHabit(id: string, userId: string, updates: Partial<Habit>): Promise<Habit | undefined>;
+  deleteHabit(id: string, userId: string): Promise<boolean>;
+
+  // Pomodoro session operations
+  getPomodoroSessions(userId: string): Promise<PomodoroSession[]>;
+  createPomodoroSession(userId: string, session: Omit<InsertPomodoroSession, "id" | "userId">): Promise<PomodoroSession>;
 }
 
-function getDefaultTasks(): Task[] {
-  const today = new Date().toISOString().split("T")[0];
-  return [
-    {
-      id: randomUUID(),
-      title: "Review project requirements",
-      description: "Go through the project specs and create a plan",
-      priority: "high" as TaskPriority,
-      completed: false,
-      dueDate: today,
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: randomUUID(),
-      title: "Morning workout",
-      description: "30 minutes cardio + stretching",
-      priority: "medium" as TaskPriority,
-      completed: true,
-      dueDate: today,
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: randomUUID(),
-      title: "Read documentation",
-      description: "Study React hooks and patterns",
-      priority: "low" as TaskPriority,
-      completed: false,
-      dueDate: null,
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: randomUUID(),
-      title: "Team standup meeting",
-      description: "Daily sync with the development team",
-      priority: "high" as TaskPriority,
-      completed: false,
-      dueDate: today,
-      createdAt: new Date().toISOString(),
-    },
-  ];
-}
-
-function getDefaultHabits(): Habit[] {
-  const today = new Date().toISOString().split("T")[0];
-  const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
-  const twoDaysAgo = new Date(Date.now() - 172800000).toISOString().split("T")[0];
-  
-  return [
-    {
-      id: randomUUID(),
-      name: "Morning Meditation",
-      description: "10 minutes of mindfulness",
-      color: "#14B8A6",
-      streak: 5,
-      completedDates: [twoDaysAgo, yesterday, today],
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: randomUUID(),
-      name: "Read for 30 minutes",
-      description: "Reading books or articles",
-      color: "#F97316",
-      streak: 3,
-      completedDates: [yesterday],
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: randomUUID(),
-      name: "Exercise",
-      description: "Physical activity for at least 20 minutes",
-      color: "#8B5CF6",
-      streak: 7,
-      completedDates: [twoDaysAgo, yesterday, today],
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: randomUUID(),
-      name: "Drink 8 glasses of water",
-      description: "Stay hydrated throughout the day",
-      color: "#3B82F6",
-      streak: 2,
-      completedDates: [today],
-      createdAt: new Date().toISOString(),
-    },
-  ];
-}
-
-export class MemStorage implements IStorage {
-  private tasks: Map<string, Task>;
-  private habits: Map<string, Habit>;
-  private pomodoroSessions: PomodoroSession[];
-
-  constructor() {
-    this.tasks = new Map();
-    this.habits = new Map();
-    this.pomodoroSessions = [];
-    
-    const defaultTasks = getDefaultTasks();
-    defaultTasks.forEach(task => this.tasks.set(task.id, task));
-    
-    const defaultHabits = getDefaultHabits();
-    defaultHabits.forEach(habit => this.habits.set(habit.id, habit));
+export class DatabaseStorage implements IStorage {
+  // User operations (required for Replit Auth)
+  async getUser(id: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
   }
 
-  async getTasks(): Promise<Task[]> {
-    return Array.from(this.tasks.values());
+  async upsertUser(userData: UpsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(userData)
+      .onConflictDoUpdate({
+        target: users.id,
+        set: {
+          ...userData,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return user;
   }
 
-  async getTask(id: string): Promise<Task | undefined> {
-    return this.tasks.get(id);
+  // Task operations
+  async getTasks(userId: string): Promise<Task[]> {
+    return await db.select().from(tasks).where(eq(tasks.userId, userId));
   }
 
-  async createTask(insertTask: InsertTask): Promise<Task> {
-    const id = randomUUID();
-    const task: Task = {
-      id,
-      title: insertTask.title,
-      description: insertTask.description || "",
-      priority: insertTask.priority,
-      completed: false,
-      dueDate: insertTask.dueDate || null,
-      createdAt: new Date().toISOString(),
-    };
-    this.tasks.set(id, task);
+  async getTask(id: string, userId: string): Promise<Task | undefined> {
+    const [task] = await db
+      .select()
+      .from(tasks)
+      .where(and(eq(tasks.id, id), eq(tasks.userId, userId)));
     return task;
   }
 
-  async updateTask(id: string, updates: Partial<Task>): Promise<Task | undefined> {
-    const task = this.tasks.get(id);
-    if (!task) return undefined;
-    
-    const updatedTask = { ...task, ...updates };
-    this.tasks.set(id, updatedTask);
-    return updatedTask;
+  async createTask(userId: string, insertTask: Omit<InsertTask, "userId">): Promise<Task> {
+    const [task] = await db
+      .insert(tasks)
+      .values({
+        ...insertTask,
+        userId,
+      })
+      .returning();
+    return task;
   }
 
-  async deleteTask(id: string): Promise<boolean> {
-    return this.tasks.delete(id);
+  async updateTask(id: string, userId: string, updates: Partial<Task>): Promise<Task | undefined> {
+    const [task] = await db
+      .update(tasks)
+      .set(updates)
+      .where(and(eq(tasks.id, id), eq(tasks.userId, userId)))
+      .returning();
+    return task;
   }
 
-  async getHabits(): Promise<Habit[]> {
-    return Array.from(this.habits.values());
+  async deleteTask(id: string, userId: string): Promise<boolean> {
+    const result = await db
+      .delete(tasks)
+      .where(and(eq(tasks.id, id), eq(tasks.userId, userId)));
+    return result.rowCount ? result.rowCount > 0 : false;
   }
 
-  async getHabit(id: string): Promise<Habit | undefined> {
-    return this.habits.get(id);
+  // Habit operations
+  async getHabits(userId: string): Promise<Habit[]> {
+    return await db.select().from(habits).where(eq(habits.userId, userId));
   }
 
-  async createHabit(insertHabit: InsertHabit): Promise<Habit> {
-    const id = randomUUID();
-    const habit: Habit = {
-      id,
-      name: insertHabit.name,
-      description: insertHabit.description || "",
-      color: insertHabit.color || "#14B8A6",
-      streak: 0,
-      completedDates: [],
-      createdAt: new Date().toISOString(),
-    };
-    this.habits.set(id, habit);
+  async getHabit(id: string, userId: string): Promise<Habit | undefined> {
+    const [habit] = await db
+      .select()
+      .from(habits)
+      .where(and(eq(habits.id, id), eq(habits.userId, userId)));
     return habit;
   }
 
-  async updateHabit(id: string, updates: Partial<Habit>): Promise<Habit | undefined> {
-    const habit = this.habits.get(id);
-    if (!habit) return undefined;
-    
-    const updatedHabit = { ...habit, ...updates };
-    this.habits.set(id, updatedHabit);
-    return updatedHabit;
+  async createHabit(userId: string, insertHabit: Omit<InsertHabit, "userId">): Promise<Habit> {
+    const [habit] = await db
+      .insert(habits)
+      .values({
+        ...insertHabit,
+        userId,
+      })
+      .returning();
+    return habit;
   }
 
-  async deleteHabit(id: string): Promise<boolean> {
-    return this.habits.delete(id);
+  async updateHabit(id: string, userId: string, updates: Partial<Habit>): Promise<Habit | undefined> {
+    const [habit] = await db
+      .update(habits)
+      .set(updates)
+      .where(and(eq(habits.id, id), eq(habits.userId, userId)))
+      .returning();
+    return habit;
   }
 
-  async getPomodoroSessions(): Promise<PomodoroSession[]> {
-    return this.pomodoroSessions;
+  async deleteHabit(id: string, userId: string): Promise<boolean> {
+    const result = await db
+      .delete(habits)
+      .where(and(eq(habits.id, id), eq(habits.userId, userId)));
+    return result.rowCount ? result.rowCount > 0 : false;
   }
 
-  async createPomodoroSession(session: Omit<PomodoroSession, "id">): Promise<PomodoroSession> {
-    const newSession: PomodoroSession = {
-      ...session,
-      id: randomUUID(),
-    };
-    this.pomodoroSessions.push(newSession);
+  // Pomodoro session operations
+  async getPomodoroSessions(userId: string): Promise<PomodoroSession[]> {
+    return await db
+      .select()
+      .from(pomodoroSessions)
+      .where(eq(pomodoroSessions.userId, userId));
+  }
+
+  async createPomodoroSession(
+    userId: string,
+    session: Omit<InsertPomodoroSession, "id" | "userId">
+  ): Promise<PomodoroSession> {
+    const [newSession] = await db
+      .insert(pomodoroSessions)
+      .values({
+        ...session,
+        userId,
+      })
+      .returning();
     return newSession;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
