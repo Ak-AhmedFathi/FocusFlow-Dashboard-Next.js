@@ -16,8 +16,10 @@ import {
 } from "@shared/schema";
 
 export interface IStorage {
-  // User operations (required for Replit Auth)
+  // User operations
   getUser(id: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  createUser(user: Pick<User, "email" | "firstName" | "lastName"> & { passwordHash: string }): Promise<User>;
   upsertUser(user: UpsertUser): Promise<User>;
 
   // Task operations
@@ -40,10 +42,31 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  // User operations (required for Replit Auth)
+  // User operations
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
+  async createUser(
+    user: Pick<User, "email" | "firstName" | "lastName"> & { passwordHash: string },
+  ): Promise<User> {
+    const [created] = await db
+      .insert(users)
+      .values({
+        email: user.email,
+        firstName: user.firstName ?? null,
+        lastName: user.lastName ?? null,
+        profileImageUrl: null,
+        passwordHash: user.passwordHash,
+      })
+      .returning();
+    return created;
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {

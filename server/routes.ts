@@ -1,24 +1,83 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import { getSession, isAuthenticated } from "./replitAuth";
+import { hashPassword, verifyPassword } from "./authUtils";
 import { insertTaskSchema, insertHabitSchema } from "@shared/schema";
 import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Setup Replit Auth
-  await setupAuth(app);
+  // Setup session middleware
+  app.use(getSession());
 
   // Auth routes
-  app.get("/api/auth/user", isAuthenticated, async (req: any, res) => {
+  const authSchema = z.object({
+    email: z.string().email(),
+    password: z.string().min(6, "Password must be at least 6 characters"),
+    firstName: z.string().optional(),
+    lastName: z.string().optional(),
+  });
+
+  app.post("/api/auth/signup", async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
+      const { email, password, firstName, lastName } = authSchema.parse(req.body);
+
+      const existing = await storage.getUserByEmail(email);
+      if (existing) {
+        return res.status(400).json({ message: "Email already in use" });
+      }
+
+      const passwordHash = await hashPassword(password);
+      const user = await storage.createUser({
+        email,
+        firstName: firstName ?? null,
+        lastName: lastName ?? null,
+        passwordHash,
+      });
+
+      req.session.userId = user.id;
+      res.status(201).json(user);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ message: "Failed to sign up" });
+    }
+  });
+
+  app.post("/api/auth/login", async (req: any, res) => {
+    try {
+      const loginSchema = authSchema.pick({ email: true, password: true });
+      const { email, password } = loginSchema.parse(req.body);
+
+      const user = await storage.getUserByEmail(email);
+      if (!user || !user.passwordHash) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      const valid = await verifyPassword(password, user.passwordHash);
+      if (!valid) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      req.session.userId = user.id;
       res.json(user);
     } catch (error) {
-      console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Failed to fetch user" });
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ message: "Failed to login" });
     }
+  });
+
+  app.post("/api/auth/logout", (req: any, res) => {
+    req.session.destroy(() => {
+      res.status(204).end();
+    });
+  });
+
+  app.get("/api/auth/user", isAuthenticated, async (req: any, res) => {
+    res.json(req.user);
   });
 
   // Task routes (protected)
