@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "wouter";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ export default function AuthPage() {
   const [lastName, setLastName] = useState("");
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
-  const [, navigate] = useNavigate();
+  const [, setLocation] = useLocation();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -41,8 +41,11 @@ export default function AuthPage() {
         throw new Error(data.message || "Authentication failed");
       }
 
-      // On success, go to dashboard
-      navigate("/dashboard");
+      // On success, go to the main app (root dashboard route)
+      // setLocation("/dashboard");
+      // window.location.reload();
+      window.location.href = "/dashboard";
+
     } catch (error: any) {
       toast({
         title: "Authentication Failed",

@@ -38,7 +38,7 @@ export default function Landing() {
           <div className="flex items-center gap-2">
             <ThemeToggle />
             <Button asChild data-testid="button-login">
-              <a href="/auth">Sign In</a>
+              <a href="/signIn">Sign In</a>
             </Button>
           </div>
         </div>
@@ -57,7 +57,7 @@ export default function Landing() {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button size="lg" asChild className="gap-2" data-testid="button-get-started">
-                <a href="/auth">
+                <a href="/signIn">
                   Get Started Free
                   <ArrowRight className="h-4 w-4" />
                 </a>

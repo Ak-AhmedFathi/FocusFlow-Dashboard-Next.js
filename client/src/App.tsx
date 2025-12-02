@@ -17,7 +17,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LogOut, User } from "lucide-react";
+import { LogOut, Loader2 } from "lucide-react";
 import Dashboard from "@/pages/dashboard";
 import Tasks from "@/pages/tasks";
 import Habits from "@/pages/habits";
@@ -25,8 +25,8 @@ import Pomodoro from "@/pages/pomodoro";
 import Calendar from "@/pages/calendar";
 import Settings from "@/pages/settings";
 import Landing from "@/pages/landing";
+import AuthPage from "@/pages/auth";
 import NotFound from "@/pages/not-found";
-import { Loader2 } from "lucide-react";
 
 function UserMenu() {
   const { user } = useAuth();
@@ -40,6 +40,16 @@ function UserMenu() {
   const displayName = user.firstName && user.lastName
     ? `${user.firstName} ${user.lastName}`
     : user.email || "User";
+
+  const handleLogout = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      // reload to reset UI
+      window.location.href = "/";
+    }
+  };
 
   return (
     <DropdownMenu>
@@ -64,10 +74,10 @@ function UserMenu() {
         </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <a href="/api/logout" className="cursor-pointer" data-testid="button-logout">
+          <button onClick={handleLogout} className="cursor-pointer w-full text-left" data-testid="button-logout">
             <LogOut className="mr-2 h-4 w-4" />
             <span>Log out</span>
-          </a>
+          </button>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -77,7 +87,7 @@ function UserMenu() {
 function AuthenticatedRouter() {
   return (
     <Switch>
-      <Route path="/" component={Dashboard} />
+      <Route path="/dashboard" component={Dashboard} />
       <Route path="/tasks" component={Tasks} />
       <Route path="/habits" component={Habits} />
       <Route path="/pomodoro" component={Pomodoro} />
@@ -127,7 +137,14 @@ function AppContent() {
   }
 
   if (!isAuthenticated) {
-    return <Landing />;
+    // When unauthenticated, allow public client-side routes like /auth
+    return (
+      <Switch>
+        <Route path="/signIn" component={AuthPage} />
+        <Route path="/" component={Landing} />
+        <Route path="/*" component={NotFound} />
+      </Switch>
+    );
   }
 
   return <AuthenticatedApp />;

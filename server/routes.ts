@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { getSession, isAuthenticated } from "./replitAuth";
+import { getSession, isAuthenticated } from "./auth";
 import { hashPassword, verifyPassword } from "./authUtils";
 import { insertTaskSchema, insertHabitSchema } from "@shared/schema";
 import { z } from "zod";
@@ -38,6 +38,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       req.session.userId = user.id;
       res.status(201).json(user);
     } catch (error) {
+      console.error("/api/auth/signup error:", error);
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }
@@ -63,6 +64,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       req.session.userId = user.id;
       res.json(user);
     } catch (error) {
+      console.error("/api/auth/login error:", error);
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }
@@ -83,7 +85,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Task routes (protected)
   app.get("/api/tasks", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const tasks = await storage.getTasks(userId);
       res.json(tasks);
     } catch (error) {
@@ -93,7 +95,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/tasks/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const task = await storage.getTask(req.params.id, userId);
       if (!task) {
         return res.status(404).json({ error: "Task not found" });
@@ -106,7 +108,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/tasks", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const validatedData = insertTaskSchema.parse(req.body);
       const task = await storage.createTask(userId, validatedData);
       res.status(201).json(task);
@@ -120,7 +122,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/tasks/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const task = await storage.updateTask(req.params.id, userId, req.body);
       if (!task) {
         return res.status(404).json({ error: "Task not found" });
@@ -133,7 +135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/tasks/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const deleted = await storage.deleteTask(req.params.id, userId);
       if (!deleted) {
         return res.status(404).json({ error: "Task not found" });
@@ -147,7 +149,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Habit routes (protected)
   app.get("/api/habits", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const habits = await storage.getHabits(userId);
       res.json(habits);
     } catch (error) {
@@ -157,7 +159,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/habits/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const habit = await storage.getHabit(req.params.id, userId);
       if (!habit) {
         return res.status(404).json({ error: "Habit not found" });
@@ -170,7 +172,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/habits", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const validatedData = insertHabitSchema.parse(req.body);
       const habit = await storage.createHabit(userId, validatedData);
       res.status(201).json(habit);
@@ -184,7 +186,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/habits/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const habit = await storage.updateHabit(req.params.id, userId, req.body);
       if (!habit) {
         return res.status(404).json({ error: "Habit not found" });
@@ -197,7 +199,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/habits/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const deleted = await storage.deleteHabit(req.params.id, userId);
       if (!deleted) {
         return res.status(404).json({ error: "Habit not found" });
@@ -211,7 +213,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Pomodoro session routes (protected)
   app.get("/api/pomodoro/sessions", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const sessions = await storage.getPomodoroSessions(userId);
       res.json(sessions);
     } catch (error) {
@@ -221,7 +223,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/pomodoro/sessions", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const session = await storage.createPomodoroSession(userId, {
         ...req.body,
         startedAt: new Date(req.body.startedAt),

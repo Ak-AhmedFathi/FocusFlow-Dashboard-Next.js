@@ -30,7 +30,8 @@ export default function Tasks() {
   const [sortBy, setSortBy] = useState<SortOption>("priority");
   const [filterBy, setFilterBy] = useState<FilterOption>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [dateFilter, setDateFilter] = useState<"all" | "today" | "week" | "overdue">("");
+  // default to "all" so Select.Item never uses an empty string value
+  const [dateFilter, setDateFilter] = useState<"all" | "today" | "week" | "overdue">("all");
 
   const filteredAndSortedTasks = useMemo(() => {
     let filtered = [...tasks];
@@ -165,7 +166,7 @@ export default function Tasks() {
               <SelectValue placeholder="By Date" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All Dates</SelectItem>
+              <SelectItem value="all">All Dates</SelectItem>
               <SelectItem value="today">Today</SelectItem>
               <SelectItem value="week">This Week</SelectItem>
               <SelectItem value="overdue">Overdue</SelectItem>
